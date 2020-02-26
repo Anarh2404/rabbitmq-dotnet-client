@@ -143,7 +143,7 @@ namespace RabbitMQ.Client.Content
 
         public static void WriteChar(BinaryBufferWriter writer, char value)
         {
-            writer.Write((ushort)value);
+            writer.Write(value);
         }
 
         public static void WriteDouble(BinaryBufferWriter writer, double value)
@@ -173,16 +173,22 @@ namespace RabbitMQ.Client.Content
 
         public static void WriteString(BinaryBufferWriter writer, string value)
         {
-#if NETSTANDARD2_1
+            int length = Encoding.UTF8.GetMaxByteCount(value.Length);
             byte[] bytes = null;
-            int length = value.Length; 
             try
             {
-                // actually max array length is 1024 bytes
+#if NETSTANDARD2_1
                 Span<byte> span = length < 512 ? stackalloc byte[length] : (bytes = ArrayPool<byte>.Shared.Rent(length));
                 int byteCount = Encoding.UTF8.GetBytes(value, span);
+                span = span.Slice(0, byteCount);
+#else
+                bytes = ArrayPool<byte>.Shared.Rent(length);
+                int byteCount = Encoding.UTF8.GetBytes(value, 0, value.Length, bytes, 0);
+                var span = new ReadOnlySpan<byte>(bytes, 0, byteCount);
+#endif
+
                 writer.Write((ushort)byteCount);
-                writer.Write(span.Slice(0, byteCount));
+                writer.Write(span);
             }
             finally
             {
@@ -191,12 +197,6 @@ namespace RabbitMQ.Client.Content
                     ArrayPool<byte>.Shared.Return(bytes);
                 }
             }
-#else
-            byte[] bytes = Encoding.UTF8.GetBytes(value);
-            writer.Write((ushort)bytes.Length);
-            writer.Write(bytes);
-#endif
-
         }
     }
 }
